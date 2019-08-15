@@ -6,6 +6,9 @@ rescue LoadError
   # for make mjit-headers
 end
 
+require_relative "fileutils/version"
+
+#
 # = fileutils.rb
 #
 # Copyright (c) 2000-2007 Minero Aoki
@@ -62,7 +65,7 @@ end
 #
 # There are some `low level' methods, which do not accept any option:
 #
-#   FileUtils.copy_entry(src, dest, preserve = false, dereference = false)
+#   FileUtils.copy_entry(src, dest, preserve = false, dereference_root = false, remove_destination = false)
 #   FileUtils.copy_file(src, dest, preserve = false, dereference = true)
 #   FileUtils.copy_stream(srcstream, deststream)
 #   FileUtils.remove_entry(path, force = false)
@@ -89,10 +92,8 @@ end
 # This module has all methods of FileUtils module, but never changes
 # files/directories.  This equates to passing the <tt>:noop</tt> and
 # <tt>:verbose</tt> flags to methods in FileUtils.
-
+#
 module FileUtils
-
-  VERSION = "1.1.0"
 
   def self.private_module_function(name)   #:nodoc:
     module_function name
@@ -113,12 +114,14 @@ module FileUtils
   #
   # Changes the current directory to the directory +dir+.
   #
-  # If this method is called with block, resumes to the old
-  # working directory after the block execution finished.
+  # If this method is called with block, resumes to the previous
+  # working directory after the block execution has finished.
   #
-  #   FileUtils.cd('/', :verbose => true)   # chdir and report it
+  #   FileUtils.cd('/')  # change directory
   #
-  #   FileUtils.cd('/') do  # chdir
+  #   FileUtils.cd('/', :verbose => true)   # change directory and report it
+  #
+  #   FileUtils.cd('/') do  # change directory
   #     # ...               # do something
   #   end                   # return to original directory
   #
@@ -526,7 +529,8 @@ module FileUtils
         end
         begin
           File.rename s, d
-        rescue Errno::EXDEV
+        rescue Errno::EXDEV,
+               Errno::EPERM # move from unencrypted to encrypted dir (ext4)
           copy_entry s, d, true
           if secure
             remove_entry_secure s, force
@@ -694,7 +698,7 @@ module FileUtils
         f.chown euid, -1
         f.chmod 0700
       }
-    rescue EISDIR # JRuby in non-native mode can't open files as dirs
+    rescue Errno::EISDIR # JRuby in non-native mode can't open files as dirs
       File.lstat(dot_file).tap {|fstat|
         unless fu_stat_identical_entry?(st, fstat)
           # symlink (TOC-to-TOU attack?)
@@ -1078,11 +1082,6 @@ module FileUtils
   end
   module_function :chown_R
 
-  begin
-    require 'etc'
-  rescue LoadError # rescue LoadError for miniruby
-  end
-
   def fu_get_uid(user)   #:nodoc:
     return nil unless user
     case user
@@ -1091,6 +1090,7 @@ module FileUtils
     when /\A\d+\z/
       user.to_i
     else
+      require 'etc'
       Etc.getpwnam(user) ? Etc.getpwnam(user).uid : nil
     end
   end
@@ -1104,6 +1104,7 @@ module FileUtils
     when /\A\d+\z/
       group.to_i
     else
+      require 'etc'
       Etc.getgrnam(group) ? Etc.getgrnam(group).gid : nil
     end
   end
@@ -1273,9 +1274,15 @@ module FileUtils
     def entries
       opts = {}
       opts[:encoding] = ::Encoding::UTF_8 if fu_windows?
-      Dir.entries(path(), opts)\
-          .reject {|n| n == '.' or n == '..' }\
-          .map {|n| Entry_.new(prefix(), join(rel(), n.untaint)) }
+
+      files = if Dir.respond_to?(:children)
+        Dir.children(path, opts)
+      else
+        Dir.entries(path(), opts)
+           .reject {|n| n == '.' or n == '..' }
+      end
+
+      files.map {|n| Entry_.new(prefix(), join(rel(), n.untaint)) }
     end
 
     def stat
@@ -1539,10 +1546,13 @@ module FileUtils
     else
       DIRECTORY_TERM = "(?=/|\\z)"
     end
-    SYSCASE = File::FNM_SYSCASE.nonzero? ? "-i" : ""
 
     def descendant_directory?(descendant, ascendant)
-      /\A(?#{SYSCASE}:#{Regexp.quote(ascendant)})#{DIRECTORY_TERM}/ =~ File.dirname(descendant)
+      if File::FNM_SYSCASE.nonzero?
+        File.expand_path(File.dirname(descendant)).casecmp(File.expand_path(ascendant)) == 0
+      else
+        File.expand_path(File.dirname(descendant)) == File.expand_path(ascendant)
+      end
     end
   end   # class Entry_
 

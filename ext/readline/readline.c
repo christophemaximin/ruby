@@ -823,7 +823,7 @@ readline_s_redisplay(VALUE self)
  *
  * When working with auto-complete there are some strategies that work well.
  * To get some ideas you can take a look at the
- * completion.rb[https://svn.ruby-lang.org/repos/ruby/trunk/lib/irb/completion.rb]
+ * completion.rb[https://git.ruby-lang.org/ruby.git/tree/lib/irb/completion.rb]
  * file for irb.
  *
  * The common strategy is to take a list of possible completions and filter it
@@ -1314,12 +1314,12 @@ readline_s_get_completion_append_character(VALUE self)
  *   Readline.completion_quote_character -> char
  *
  * When called during a completion (e.g. from within your completion_proc),
- * it will return a string containing the chracter used to quote the
+ * it will return a string containing the character used to quote the
  * argument being completed, or nil if the argument is unquoted.
  *
  * When called at other times, it will always return nil.
  *
- * Note that ``Readline.completer_quote_characters`` must be set,
+ * Note that Readline.completer_quote_characters must be set,
  * or this method will always return nil.
  */
 static VALUE
